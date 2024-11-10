@@ -1,0 +1,275 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>文件批量复制工具</title>
+    <style>
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            line-height: 1.6;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+
+        .container {
+            max-width: 800px;
+            margin: 0 auto;
+            background-color: white;
+            padding: 30px;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+        }
+
+        h1 {
+            text-align: center;
+            color: #333;
+            margin-bottom: 30px;
+        }
+
+        .input-group {
+            margin-bottom: 20px;
+        }
+
+        .input-group label {
+            display: block;
+            margin-bottom: 8px;
+            color: #555;
+            font-weight: 500;
+        }
+
+        .input-wrapper {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        input[type="text"] {
+            flex: 1;
+            padding: 8px 12px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            font-size: 14px;
+        }
+
+        input[type="text"]:focus {
+            outline: none;
+            border-color: #4A90E2;
+            box-shadow: 0 0 0 2px rgba(74, 144, 226, 0.2);
+        }
+
+        button {
+            padding: 8px 16px;
+            background-color: #4A90E2;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 14px;
+            transition: background-color 0.2s;
+        }
+
+        button:hover {
+            background-color: #357ABD;
+        }
+
+        button:disabled {
+            background-color: #B8D4F1;
+            cursor: not-allowed;
+        }
+
+        #copy-button {
+            width: 100%;
+            padding: 12px;
+            font-size: 16px;
+            font-weight: 500;
+            margin-top: 20px;
+        }
+
+        .progress-bar {
+            margin-top: 20px;
+            height: 20px;
+            background-color: #f0f0f0;
+            border-radius: 10px;
+            overflow: hidden;
+            display: none;
+        }
+
+        .progress-bar-inner {
+            height: 100%;
+            background-color: #4A90E2;
+            width: 0%;
+            transition: width 0.3s ease;
+        }
+
+                .progress-container {
+            margin-top: 20px;
+        }
+
+        .progress-text {
+            text-align: center;
+            margin-top: 8px;
+            font-size: 14px;
+            color: #666;
+            min-height: 20px;
+        }
+
+        .status {
+            margin-top: 20px;
+            padding: 12px;
+            border-radius: 4px;
+            display: none;
+        }
+
+        .status.error {
+            background-color: #FEE2E2;
+            border: 1px solid #FCA5A5;
+            color: #DC2626;
+        }
+
+        .status.success {
+            background-color: #D1FAE5;
+            border: 1px solid #6EE7B7;
+            color: #047857;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>文件批量复制工具</h1>
+
+        <div class="input-group">
+            <label for="sourcePath">源文件/文件夹路径</label>
+            <div class="input-wrapper">
+                <input type="text" id="sourcePath" placeholder="请选择一个或多个文件/文件夹" readonly>
+                <button onclick="selectSourceFolder()">选择文件/文件夹</button>
+            </div>
+        </div>
+
+        <div class="input-group">
+            <label for="targetPath">目标文件夹路径</label>
+            <div class="input-wrapper">
+                <input type="text" id="targetPath" placeholder="请选择目标文件夹" readonly>
+                <button onclick="selectTargetFolder()">选择文件夹</button>
+            </div>
+        </div>
+
+        <button id="copy-button" onclick="startCopy()">开始复制</button>
+
+        <div class="progress-container">
+            <div id="progress-bar" class="progress-bar">
+                <div id="progress-bar-inner" class="progress-bar-inner"></div>
+            </div>
+            <div id="progress-text" class="progress-text"></div>
+        </div>
+
+        <div id="status" class="status"></div>
+    </div>
+
+    <script>
+        const sourceInput = document.getElementById('sourcePath');
+        const targetInput = document.getElementById('targetPath');
+        const copyButton = document.getElementById('copy-button');
+        const progressBar = document.getElementById('progress-bar');
+        const progressBarInner = document.getElementById('progress-bar-inner');
+        const progressText = document.getElementById('progress-text');
+        const status = document.getElementById('status');
+
+               window.addEventListener('DOMContentLoaded', async () => {
+            // 检查默认的目标文件夹是否存在，如果不存在则创建
+            try {
+                await window.electronAPI.ensureOutputDirectory();
+                // 设置默认的目标文件夹路径
+                targetInput.value = '/Users/fudong/Downloads/output';
+            } catch (err) {
+                console.error('创建输出目录时出错:', err);
+                showStatus('创建输出目录时出错: ' + err.message, 'error');
+            }
+        });
+
+        // 防止重复点击
+        let isCopying = false;
+
+        async function selectSourceFolder() {
+            try {
+                const paths = await window.electronAPI.selectFolder('source');
+                if (paths && paths.length > 0) {
+                    sourceInput.value = paths.join('; ');
+                    status.style.display = 'none';
+                }
+            } catch (err) {
+                console.error('选择文件夹时出错:', err);
+                showStatus('选择文件夹时出错: ' + err.message, 'error');
+            }
+        }
+
+        async function selectTargetFolder() {
+            try {
+                const path = await window.electronAPI.selectFolder('target');
+                if (path) {
+                    targetInput.value = path;
+                    // 清除之前的状态
+                    status.style.display = 'none';
+                }
+            } catch (err) {
+                console.error('选择文件夹时出错:', err);
+                showStatus('选择文件夹时出错: ' + err.message, 'error');
+            }
+        }
+
+        function showStatus(message, type) {
+            status.textContent = message;
+            status.style.display = 'block';
+            status.className = 'status ' + type;
+        }
+
+ function startCopy() {
+        if (isCopying) return;
+
+        const sourcePaths = sourceInput.value.trim().split(';').map(p => p.trim()).filter(p => p);
+        const targetPath = targetInput.value.trim();
+
+        if (sourcePaths.length === 0 || !targetPath) {
+            showStatus('请选择源文件夹和目标文件夹', 'error');
+            return;
+        }
+
+        isCopying = true;
+        copyButton.disabled = true;
+        progressBar.style.display = 'block';
+        progressBarInner.style.width = '0%';
+        progressText.textContent = '准备复制...';
+        status.style.display = 'none';
+
+        window.electronAPI.removeListeners();
+
+        window.electronAPI.onProgress((event, data) => {
+            progressBarInner.style.width = `${data.progress}%`;
+            progressText.textContent = `正在复制: ${data.currentFile} (${data.copiedFiles}/${data.totalFiles})`;
+        });
+
+        window.electronAPI.onComplete((event, data) => {
+            isCopying = false;
+            copyButton.disabled = false;
+            progressText.textContent = `复制完成！共复制了 ${data.copiedFiles} 个文件`;
+            showStatus(`成功复制了 ${data.copiedFiles} 个文件！`, 'success');
+        });
+
+        window.electronAPI.onError((event, message) => {
+            isCopying = false;
+            copyButton.disabled = false;
+            progressBar.style.display = 'none';
+            progressText.textContent = '';
+            showStatus(`错误：${message}`, 'error');
+        });
+
+        window.electronAPI.startCopy({ sourcePaths, targetPath });
+    }
+        </script>
+</body>
+</html>
